@@ -29,7 +29,7 @@ app = Flask(__name__)
 
 # Initialize Firebase Admin
 try:
-    cred = credentials.Certificate('./api-tester-pro-175f3-firebase-adminsdk-fbsvc-bf6d4bd54b.json')
+    cred = credentials.Certificate('../api-tester-pro-175f3-firebase-adminsdk-fbsvc-bf6d4bd54b.json')
     firebase_admin.initialize_app(cred, {
         'databaseURL': 'https://api-tester-pro-175f3-default-rtdb.firebaseio.com'
     })
@@ -178,12 +178,20 @@ def generate_and_save_blog(topic, main_page_url):
 # Flask API endpoint to generate blog
 @app.route('/generate-blog', methods=['POST'])
 def generate_blog_endpoint():
-    data = request.get_json()
-    topic = data.get('topic', "API testing techniques and best practices")
-    main_page_url = data.get('main_page_url', "https://apitester-pro.vercel.app")
-    
-    result, status_code = generate_and_save_blog(topic, main_page_url)
-    return jsonify(result), status_code
+    if request.content_type != 'application/json':
+        logger.error(f"Invalid Content-Type: {request.content_type}")
+        return jsonify({"error": "Content-Type must be application/json"}), 415
+
+    try:
+        data = request.get_json()
+        topic = data.get('topic', "API testing techniques and best practices")
+        main_page_url = data.get('main_page_url', "https://apitester-pro.vercel.app")
+        
+        result, status_code = generate_and_save_blog(topic, main_page_url)
+        return jsonify(result), status_code
+    except Exception as e:
+        logger.error(f"Error processing request: {str(e)}")
+        return jsonify({"error": "Invalid JSON payload"}), 400
 
 # Run Flask app
 if __name__ == "__main__":
