@@ -11,6 +11,7 @@ from firebase_admin import credentials, db
 import logging
 import re
 from datetime import datetime
+import random
 
 # Configure logging
 logging.basicConfig(
@@ -29,7 +30,7 @@ app = Flask(__name__)
 
 # Initialize Firebase Admin
 try:
-    cred = credentials.Certificate('../api-tester-pro-175f3-firebase-adminsdk-fbsvc-bf6d4bd54b.json')
+    cred = credentials.Certificate('./api-tester-pro-175f3-firebase-adminsdk-fbsvc-bf6d4bd54b.json')
     firebase_admin.initialize_app(cred, {
         'databaseURL': 'https://api-tester-pro-175f3-default-rtdb.firebaseio.com'
     })
@@ -58,25 +59,37 @@ except Exception as e:
     logger.error(f"Failed to initialize OpenRouter API: {str(e)}")
     raise
 
+# Simulated trending topics (replace with real API call if needed)
+trending_topics = [
+    "API security best practices",
+    "Automating API testing with Python",
+    "GraphQL vs REST API performance",
+    "API rate limiting strategies",
+    "Testing APIs with Postman and Python",
+    "Handling API errors gracefully",
+    "API versioning techniques"
+]
+
 # Define the prompt template for blog generation
 prompt_template = PromptTemplate(
-    input_variables=["topic", "main_page_url"],
+    input_variables=["topic", "main_page_url", "inspiration"],
     template="""
     You are an expert content writer specializing in technical blogs. Write a 700-word blog post about {topic}. 
     The blog should include:
-    - A catchy title
-    - A 100-word description summarizing the article
-    - A meta title (up to 60 characters)
-    - A meta description (up to 160 characters)
-    - A list of 5-7 relevant keywords
-    - A Python code snippet related to API testing
+    - A unique, catchy title that avoids repetition of previous titles
+    - A 100-word description summarizing the article, distinct from past descriptions
+    - A meta title (up to 60 characters), unique and SEO-optimized
+    - A meta description (up to 160 characters), unique and SEO-optimized
+    - A list of 5-7 relevant keywords, varied from previous posts
+    - A Python code snippet related to API testing, unique and practical
     - A call-to-action at the end linking to {main_page_url} for more API testing resources.
+    Use this for inspiration to ensure uniqueness: {inspiration}.
     Format the output as a JSON object with fields: title, description, meta_title, meta_description, keywords, content.
     Ensure the content is engaging, informative, exactly 700 words (excluding metadata), and optimized for SEO.
-    Return ONLY the JSON object, without any additional text, Markdown, code fences, or explanations.
+    Avoid repeating phrases, structures, or ideas from previous posts. Return ONLY the JSON object.
     """
 )
-logger.info("Prompt template defined")
+logger.info("Prompt template defined with uniqueness constraints")
 
 # Function to clean Markdown from response
 def clean_markdown_response(response_text):
@@ -109,6 +122,10 @@ def generate_and_save_blog(topic, main_page_url):
     logger.info(f"Starting blog generation for topic: {topic}")
 
     try:
+        # Select a random inspiration topic to ensure variety
+        inspiration = random.choice(trending_topics)
+        logger.info(f"Using inspiration topic: {inspiration}")
+
         # Create the chain
         chain = prompt_template | llm
         logger.info("LangChain pipeline created")
@@ -117,7 +134,8 @@ def generate_and_save_blog(topic, main_page_url):
         logger.info("Sending request to OpenRouter API")
         response = chain.invoke({
             "topic": topic,
-            "main_page_url": main_page_url
+            "main_page_url": main_page_url,
+            "inspiration": inspiration
         })
         logger.info(f"Received response from OpenRouter API: {response.content[:100]}...")
 
@@ -184,7 +202,7 @@ def generate_blog_endpoint():
 
     try:
         data = request.get_json()
-        topic = data.get('topic', "API testing techniques and best practices")
+        topic = data.get('topic', random.choice(trending_topics))  # Use random topic if none provided
         main_page_url = data.get('main_page_url', "https://apitester-pro.vercel.app")
         
         result, status_code = generate_and_save_blog(topic, main_page_url)
@@ -196,4 +214,4 @@ def generate_blog_endpoint():
 # Run Flask app
 if __name__ == "__main__":
     logger.info("Starting Flask application")
-    app.run( port=int(os.getenv("PORT", 5000)))
+    app.run(port=int(os.getenv("PORT", 5000)))
