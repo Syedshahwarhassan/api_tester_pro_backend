@@ -1,7 +1,5 @@
 import os
-import schedule
-import time
-from datetime import datetime
+from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
@@ -12,6 +10,7 @@ import firebase_admin
 from firebase_admin import credentials, db
 import logging
 import re
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(
@@ -24,6 +23,9 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 logger.info("Environment variables loaded")
+
+# Initialize Flask app
+app = Flask(__name__)
 
 # Initialize Firebase Admin
 try:
@@ -80,7 +82,6 @@ logger.info("Prompt template defined")
 def clean_markdown_response(response_text):
     """Remove Markdown code fences and other unwanted text from the response."""
     logger.info("Cleaning response from Markdown")
-    # Remove ```json and ``` or any surrounding whitespace
     cleaned = re.sub(r'^```json\s*|\s*```$', '', response_text, flags=re.MULTILINE)
     cleaned = cleaned.strip()
     logger.debug(f"Cleaned response: {cleaned[:100]}...")
@@ -104,9 +105,7 @@ def send_email(subject, body):
         logger.error(f"Error sending email: {str(e)}")
 
 # Function to generate, save, and notify
-def generate_and_save_blog():
-    topic = "API testing techniques and best practices"
-    main_page_url = "https://apitester-pro.vercel.app"
+def generate_and_save_blog(topic, main_page_url):
     logger.info(f"Starting blog generation for topic: {topic}")
 
     try:
@@ -132,7 +131,7 @@ def generate_and_save_blog():
             logger.error(f"Failed to parse JSON response: {str(e)}")
             logger.debug(f"Raw response content: {response.content}")
             send_email("Blog Generation Error", f"Failed to parse JSON response: {str(e)}\nRaw response: {response.content[:200]}...")
-            return
+            return {"error": "Failed to parse JSON response"}, 500
 
         # Validate required fields
         required_fields = ["title", "description", "meta_title", "meta_description", "keywords", "content"]
@@ -140,7 +139,7 @@ def generate_and_save_blog():
             missing = [f for f in required_fields if f not in blog_data]
             logger.error(f"Missing required fields: {missing}")
             send_email("Blog Generation Error", f"Missing required fields: {missing}")
-            return
+            return {"error": f"Missing required fields: {missing}"}, 500
         logger.info("All required fields present in blog data")
 
         # Add timestamp
@@ -157,7 +156,7 @@ def generate_and_save_blog():
         except Exception as e:
             logger.error(f"Failed to save to Firebase: {str(e)}")
             send_email("Blog Generation Error", f"Failed to save to Firebase: {str(e)}")
-            return
+            return {"error": "Failed to save to Firebase"}, 500
 
         # Send email notification
         notification_message = (
@@ -169,23 +168,24 @@ def generate_and_save_blog():
         send_email("New Blog Post Generated", notification_message)
         
         logger.info(f"Blog post '{blog_data['title']}' saved to Firebase at {blog_data['created_at']}")
-        
+        return {"message": "Blog post generated and saved successfully", "blog_id": blog_id, "firebase_url": firebase_url}, 200
+
     except Exception as e:
         logger.error(f"General error in blog generation: {str(e)}")
         send_email("Blog Generation Error", f"General error: {str(e)}")
+        return {"error": "Internal server error"}, 500
 
-# Schedule the task every 30 seconds
-schedule.every(30).hours.do(generate_and_save_blog)
-logger.info("Scheduled blog generation every 30 seconds")
+# Flask API endpoint to generate blog
+@app.route('/generate-blog', methods=['POST'])
+def generate_blog_endpoint():
+    data = request.get_json()
+    topic = data.get('topic', "API testing techniques and best practices")
+    main_page_url = data.get('main_page_url', "https://apitester-pro.vercel.app")
+    
+    result, status_code = generate_and_save_blog(topic, main_page_url)
+    return jsonify(result), status_code
 
-# Main loop to run the scheduler
-def run_scheduler():
-    logger.info("Starting blog generation scheduler (every 30 seconds)...")
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-
+# Run Flask app
 if __name__ == "__main__":
-    logger.info("Script started")
-    generate_and_save_blog()  # Run once immediately
-    run_scheduler()
+    logger.info("Starting Flask application")
+    app.run( port=int(os.getenv("PORT", 5000)))
